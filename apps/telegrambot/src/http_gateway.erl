@@ -50,11 +50,16 @@ handle_call({start_bot, ChatId}, _,  S = #state{chats=Chats0}) ->
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
+%---------------------------------------------------------------------------
+handle_cast({start_bot, ChatId}, S = #state{chats=Chats0}) ->
+    {ok, Pid} = bot_sup:start_child(ChatId),
+    Ref = erlang:monitor(process, Pid),
+    Chats = maps:put(ChatId, {Pid, Ref}, Chats0),
+    {noreply, S#state{chats=Chats}};
+%---------------------------------------------------------------------------
 handle_cast({webhook_update, Env, In}, State) ->
     JSON = jiffy:decode(In, [return_maps]),
     Id = get_chat_id(JSON),
-    {ok, Chats} = application:get_env(chats),
-    io:format("Chats: ~p  is_list ~p ~n", [Chats, is_list(Chats)]),
     io:format("Token: ~p~n", [application:get_env(token)]),
     io:format("ChatID: ~p~n", [Id]),
     io:format("Webhook update ### Env: ~p~n In: ~p~n", [Env, In]),
@@ -65,6 +70,9 @@ handle_cast(_, State) ->
 handle_info({start_bot_sup, Sup}, S = #state{}) ->
     {ok, Pid} = supervisor:start_child(Sup, bot_sup()),
     link(Pid),
+    % Start pre-configured bots
+    {ok, Chats} = application:get_env(chats),
+    [init_bot(ChatId) || ChatId <- Chats],
     {noreply, S#state{sup=Pid}};
 handle_info(_, State) ->
     {noreply, State}.
@@ -79,6 +87,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
+init_bot(ChatId) ->
+    gen_server:cast(?MODULE, {start_bot, ChatId}).
+
 
 bot_sup() ->
     #{id => bot_sup,
