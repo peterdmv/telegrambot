@@ -5,7 +5,10 @@
   {mod, { telegrambot_app, []}},
   {applications,
    [kernel,
-    stdlib
+    stdlib,
+    inets,
+    ssl,
+    jiffy
    ]},
   {env,[]},
   {modules, []},

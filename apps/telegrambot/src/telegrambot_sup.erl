@@ -26,10 +26,33 @@ start_link() ->
 %% Supervisor callbacks
 %%====================================================================
 
-%% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
-    {ok, { {one_for_all, 0, 1}, []} }.
+    init([[]]);
+init([Config]) ->
+   SupFlags = #{strategy => one_for_one,
+		intensity => 10,
+		period => 3600},
+    {ok, {SupFlags, child_specs(self())}}.
+
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
+child_specs(Config) ->
+    [http_gateway(Config)].
+
+http_gateway(Config) ->
+    #{id => http_gateway,
+      start => {http_gateway, start_link, [Config]},
+      restart => permanent,
+      shutdown => infinity,
+      type => worker,
+      modules => [http_gateway]}.
+
+%% bot_sup() ->
+%%     #{id => bot_sup,
+%%       start => {bot_sup, start_link, []},
+%%       restart => permanent,
+%%       shutdown => infinity,
+%%       type => supervisor,
+%%       modules => [bot_sup]}.
