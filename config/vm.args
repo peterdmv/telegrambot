@@ -2,5 +2,7 @@
 
 -setcookie telegrambot_cookie
 
+-telegrambot chats ${CHATS}
+
 +K true
 +A30
