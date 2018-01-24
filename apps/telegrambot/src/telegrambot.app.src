@@ -8,7 +8,7 @@
     stdlib,
     inets,
     ssl,
-    jiffy,
+    jsx,
     runtime_tools
    ]},
   {env,[]},

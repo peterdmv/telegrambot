@@ -3,7 +3,10 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, start_bot/1, webhook_update/1]).
+-export([reply/2,
+	 start_link/1,
+	 start_bot/1,
+	 webhook_update/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -21,8 +24,14 @@
 start_link(Sup) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Sup, []).
 
+
 start_bot(ChatId) ->
     gen_server:call(?MODULE, {start_bot, ChatId}, infinity).
+
+
+reply(ChatId, Text) ->
+    gen_server:cast(?MODULE, {reply, ChatId, Text}).
+
 
 webhook_update({Env, In}) ->
     gen_server:cast(?MODULE, {webhook_update, Env, In}).
@@ -57,12 +66,23 @@ handle_cast({start_bot, ChatId}, S = #state{chats=Chats0}) ->
     Chats = maps:put(ChatId, {Pid, Ref}, Chats0),
     {noreply, S#state{chats=Chats}};
 %---------------------------------------------------------------------------
-handle_cast({webhook_update, Env, In}, State) ->
-    JSON = jiffy:decode(In, [return_maps]),
+handle_cast({reply, ChatId, Text}, State = #state{token=Token}) ->
+    do_reply(Token, ChatId, Text),
+    {noreply, State};
+handle_cast({webhook_update, Env, In}, State = #state{chats=Chats}) ->
+    JSON = jsx:decode(list_to_binary(In), [return_maps]),
     Id = get_chat_id(JSON),
-    io:format("Token: ~p~n", [application:get_env(token)]),
-    io:format("ChatID: ~p~n", [Id]),
-    io:format("Webhook update ### Env: ~p~n In: ~p~n", [Env, In]),
+    %% io:format("Token: ~p~n", [application:get_env(token)]),
+    %% io:format("ChatID: ~p~n", [Id]),
+    %% io:format("Webhook update ### Env: ~p~n In: ~p~n JSON> ~p~n", [Env, In, JSON]),
+    io:format("TEST MAP: ~p~n",  [maps:get(Id, Chats, newchat)]),
+    case maps:get(Id, Chats, newchat) of
+	{Pid, _} ->
+	    bot:update(Pid, JSON);
+    newchat ->
+	    init_bot(Id)
+	    %% bot:update(Pid, JSON)
+    end,
     {noreply, State};
 handle_cast(_, State) ->
     {noreply, State}.
@@ -72,6 +92,7 @@ handle_info({start_bot_sup, Sup}, S = #state{}) ->
     link(Pid),
     % Start pre-configured bots
     {ok, Chats} = application:get_env(chats),
+    io:format("Chats: ~p~n", [Chats]),
     [init_bot(ChatId) || ChatId <- Chats],
     {noreply, S#state{sup=Pid}};
 handle_info(_, State) ->
@@ -120,3 +141,9 @@ start_httpd(CertFile, KeyFile) ->
 
 get_chat_id(JSON) ->
     maps:get(<<"id">>,maps:get(<<"chat">>,maps:get(<<"message">>, JSON))).
+
+do_reply(Token, ChatId, Text) ->
+    Res = httpc:request("https://api.telegram.org/bot" ++ Token ++
+		      "/sendMessage?chat_id=" ++ ChatId ++
+			    "&text=" ++ Text),
+    io:format("Res: ~p~n", [Res]).
