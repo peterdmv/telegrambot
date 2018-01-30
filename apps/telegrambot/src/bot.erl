@@ -36,8 +36,13 @@ handle_call(_, _, State) ->
 handle_cast({update, Message}, State = #state{chatid=ChatId}) ->
     Text = maps:get(<<"text">>,maps:get(<<"message">>, Message)),
     %% Date = maps:get(<<"date">>,maps:get(<<"message">>, Message)),
-    http_gateway:reply(integer_to_list(ChatId), "Message received: " ++
-			   binary_to_list(Text)),
+    case binary:match(Text, <<"bullshit">>) of
+	nomatch ->
+	    noop;
+	{_, _} ->
+	    http_gateway:reply(integer_to_list(ChatId),
+			       binary_to_list(cbsg:sentences(5)))
+    end,
     {noreply, State};
 handle_cast(_, State) ->
     {noreply, State}.

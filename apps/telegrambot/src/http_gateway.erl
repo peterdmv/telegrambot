@@ -91,7 +91,9 @@ handle_info({start_bot_sup, Sup}, S = #state{}) ->
     {ok, Pid} = supervisor:start_child(Sup, bot_sup()),
     link(Pid),
     % Start pre-configured bots
-    {ok, Chats} = application:get_env(chats),
+    Res = application:get_env(chats),
+    io:format("RESs: ~p~n", [Res]),
+    {ok, Chats} = Res,
     io:format("Chats: ~p~n", [Chats]),
     [init_bot(ChatId) || ChatId <- Chats],
     {noreply, S#state{sup=Pid}};

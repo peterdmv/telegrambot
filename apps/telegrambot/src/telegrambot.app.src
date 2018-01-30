@@ -9,7 +9,8 @@
     inets,
     ssl,
     jsx,
-    runtime_tools
+    runtime_tools,
+    cbsg
    ]},
   {env,[]},
   {modules, []},
