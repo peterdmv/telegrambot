@@ -10,7 +10,9 @@
     ssl,
     jsx,
     runtime_tools,
-    cbsg
+    cbsg,
+    mochiweb,
+    mochiweb_xpath
    ]},
   {env,[]},
   {modules, []},

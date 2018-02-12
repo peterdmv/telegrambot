@@ -160,7 +160,9 @@ get_chat_id(JSON) ->
     maps:get(<<"id">>,maps:get(<<"chat">>,maps:get(<<"message">>, JSON))).
 
 do_reply(Token, ChatId, Text) ->
+    Query = uri_string:compose_query([{"chat_id", ChatId},
+				      {"text", Text}]),
     Res = httpc:request("https://api.telegram.org/bot" ++ Token ++
-		      "/sendMessage?chat_id=" ++ ChatId ++
-			    "&text=" ++ Text),
+		      "/sendMessage?" ++ Query),
+    io:format("Query: ~p~n", [Query]),
     io:format("Res: ~p~n", [Res]).

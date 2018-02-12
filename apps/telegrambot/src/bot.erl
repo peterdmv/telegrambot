@@ -58,6 +58,14 @@ handle_cast({update, Message}, State = #state{chatid=ChatId}) ->
 	    http_gateway:reply(integer_to_list(ChatId),
 			       binary_to_list(cbsg:sentences(5)))
     end,
+    case binary:match(Text, <<"isas">>) of
+	nomatch ->
+	    noop;
+	{_, _} ->
+	    http_gateway:reply(integer_to_list(ChatId),
+			       bot_lunch:fetch(isas))
+    end,
+
     {noreply, State};
 handle_cast(_, State) ->
     {noreply, State}.
