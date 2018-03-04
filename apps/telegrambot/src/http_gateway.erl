@@ -18,7 +18,7 @@
 -behaviour(gen_server).
 
 %% API
--export([reply/2,
+-export([reply/2, reply/3,
 	 start_link/1,
 	 start_bot/1,
 	 webhook_update/1]).
@@ -47,6 +47,8 @@ start_bot(ChatId) ->
 reply(ChatId, Text) ->
     gen_server:cast(?MODULE, {reply, ChatId, Text}).
 
+reply(ChatId, Text, keyboard) ->
+    gen_server:cast(?MODULE, {reply_with_keyboard, ChatId, Text}).
 
 webhook_update({Env, In}) ->
     gen_server:cast(?MODULE, {webhook_update, Env, In}).
@@ -84,20 +86,15 @@ handle_cast({start_bot, ChatId}, S = #state{chats=Chats0}) ->
 handle_cast({reply, ChatId, Text}, State = #state{token=Token}) ->
     do_reply(Token, ChatId, Text),
     {noreply, State};
-handle_cast({webhook_update, Env, In}, State = #state{chats=Chats}) ->
-    JSON = jsx:decode(list_to_binary(In), [return_maps]),
-    Id = get_chat_id(JSON),
-    %% io:format("Token: ~p~n", [application:get_env(token)]),
-    %% io:format("ChatID: ~p~n", [Id]),
-    %% io:format("Webhook update ### Env: ~p~n In: ~p~n JSON> ~p~n", [Env, In, JSON]),
-    io:format("TEST MAP: ~p~n",  [maps:get(Id, Chats, newchat)]),
-    case maps:get(Id, Chats, newchat) of
-	{Pid, _} ->
-	    bot:update(Pid, JSON);
-    newchat ->
-	    init_bot(Id)
-	    %% bot:update(Pid, JSON)
-    end,
+handle_cast({reply_with_keyboard, ChatId, Text}, State = #state{token=Token}) ->
+    do_reply_with_inline_keyboard(Token, ChatId, Text),
+    {noreply, State};
+handle_cast({webhook_update, _Env, In}, State) ->
+    process_message(In, State),
+    {noreply, State};
+handle_cast({inline_query, Id, FirstName, QueryId, Query},
+	    State = #state{token=Token}) ->
+    do_answer_inline_query(Token, Id, FirstName, QueryId, Query),
     {noreply, State};
 handle_cast(_, State) ->
     {noreply, State}.
@@ -155,9 +152,32 @@ start_httpd(CertFile, KeyFile) ->
 		    ]),
     Pid.
 
+%% Sends a custom keyboard with two buttons to the clients
+do_reply_with_keyboard(Token, ChatId, Text) ->
+    Keyboard = [[ [{<<"text">>, <<"hk">>}], [{<<"text">>, <<"isas">>}] ]],
+    ReplyKeyboardMarkup = [{<<"keyboard">>, Keyboard},
+			   {<<"resize_keyboard">>, true}],
+    ReplyMarkup = jsx:encode(ReplyKeyboardMarkup),
+    Query = uri_string:compose_query([{"chat_id", ChatId},
+				      {"text", Text},
+				      {"reply_markup", ReplyMarkup}]),
+    Res = httpc:request("https://api.telegram.org/bot" ++ Token ++
+		      "/sendMessage?" ++ Query),
+    io:format("Query: ~p~n", [Query]),
+    io:format("Res: ~p~n", [Res]).
 
-get_chat_id(JSON) ->
-    maps:get(<<"id">>,maps:get(<<"chat">>,maps:get(<<"message">>, JSON))).
+do_reply_with_inline_keyboard(Token, ChatId, Text) ->
+    Keyboard = [[ [{<<"text">>, <<"HK">>}, {<<"callback_data">>, <<"hk">>}],
+		  [{<<"text">>, <<"Isas Spis">>}, {<<"callback_data">>, <<"isas">>}] ]],
+    ReplyKeyboardMarkup = [{<<"inline_keyboard">>, Keyboard}],
+    ReplyMarkup = jsx:encode(ReplyKeyboardMarkup),
+    Query = uri_string:compose_query([{"chat_id", ChatId},
+				      {"text", Text},
+				      {"reply_markup", ReplyMarkup}]),
+    Res = httpc:request("https://api.telegram.org/bot" ++ Token ++
+		      "/sendMessage?" ++ Query),
+    io:format("Query: ~p~n", [Query]),
+    io:format("Res: ~p~n", [Res]).
 
 do_reply(Token, ChatId, Text) ->
     Query = uri_string:compose_query([{"chat_id", ChatId},
@@ -166,3 +186,97 @@ do_reply(Token, ChatId, Text) ->
 		      "/sendMessage?" ++ Query),
     io:format("Query: ~p~n", [Query]),
     io:format("Res: ~p~n", [Res]).
+
+
+do_answer_inline_query(Token, _Id, _FirstName, QueryId, Query) ->
+    Answer = prepare_answer(Query),
+    Results = jsx:encode(Answer),
+    URIQuery = uri_string:compose_query([{"inline_query_id", QueryId},
+				      {"results", Results}]),
+    Res = httpc:request("https://api.telegram.org/bot" ++ Token ++
+		      "/answerInlineQuery?" ++ URIQuery),
+    io:format("JSON answer: ~p~n", [Results]),
+    io:format("Query: ~p~n", [Query]),
+    io:format("Res: ~p~n", [Res]).
+
+prepare_answer(<<"info">>) ->
+    [
+     [{<<"type">>,<<"article">>},
+      {<<"id">>, <<"item1">>},
+      {<<"title">>, <<"Wingsuit Flying">>},
+      {<<"thumb_url">>, <<"https://upload.wikimedia.org/wikipedia/commons/e/e8/Wingsuit_Flying_in_Massachusetts_%286367634713%29.jpg">>},
+      {<<"thumb_width">>, 50},
+      {<<"thumb_height">>, 50},
+      {<<"description">>, <<"Sunday 13:00 @ Ranhammarsvagen 14">>},
+      {<<"input_message_content">>,
+       [{<<"message_text">>,<<"*Wingsuit Flying:* Sunday 13:00 @ Ranhammarsvagen 14">>},
+	{<<"parse_mode">>,<<"Markdown">>}]}
+     ]
+    ];
+prepare_answer(<<"lunch">>) ->
+    %% Keyboard = [[ [{<<"text">>, <<"HK">>}, {<<"callback_data">>, <<"hk">>}],
+    %% 		  [{<<"text">>, <<"Isas Spis">>}, {<<"callback_data">>, <<"isas">>}] ]],
+    %% InlineKeyboardMarkup = [{<<"inline_keyboard">>, Keyboard}],
+    MenuHK = unicode:characters_to_binary(bot_lunch_parser:fetch(hk)),
+    MenuIsas = unicode:characters_to_binary(bot_lunch_parser:fetch(isas)),
+    [
+     [{<<"type">>,<<"article">>},
+      {<<"id">>, <<"item1">>},
+      {<<"title">>, <<"HK Restaurant">>},
+      {<<"thumb_url">>, <<"https://cdn1.iconfinder.com/data/icons/social-messaging-ui-color-shapes/128/eat-circle-orange-512.png">>},
+      {<<"thumb_width">>, 50},
+      {<<"thumb_height">>, 50},
+      {<<"description">>, <<"Lunch menu">>},
+      {<<"input_message_content">>,
+       [{<<"message_text">>, MenuHK},
+	{<<"parse_mode">>,<<"Markdown">>}]}
+     ],
+     [{<<"type">>,<<"article">>},
+      {<<"id">>, <<"item2">>},
+      {<<"title">>, <<"Isas Spis">>},
+      {<<"thumb_url">>, <<"https://cdn1.iconfinder.com/data/icons/social-messaging-ui-color-shapes/128/eat-circle-orange-512.png">>},
+      {<<"thumb_width">>, 50},
+      {<<"thumb_height">>, 50},
+      {<<"description">>, <<"Lunch menu">>},
+      {<<"input_message_content">>,
+       [{<<"message_text">>, MenuIsas},
+	{<<"parse_mode">>,<<"Markdown">>}]}
+     ]
+    ];
+prepare_answer(_) ->
+    [].
+
+process_message(In, State)  ->
+     Json = jsx:decode(list_to_binary(In), [return_maps]),
+     process_json(Json, State).
+
+process_json(#{<<"callback_query">> := Cb}, #state{chats=Chats}) ->
+    Data = maps:get(<<"data">>, Cb),
+    Msg = maps:get(<<"message">>, Cb, none),
+    ChatId = maps:get(<<"id">>,maps:get(<<"chat">>, Msg)),
+    io:format("### ChatId ~p~n: ", [ChatId]),
+    case maps:get(ChatId, Chats, newchat) of
+    	{Pid, _} ->
+    	    bot:callback_query(Pid, Data);
+	newchat ->
+    	    init_bot(ChatId)
+    end;
+process_json(#{<<"message">> := Msg} = JSON, #state{chats=Chats}) ->
+    ChatId = maps:get(<<"id">>,maps:get(<<"chat">>, Msg)),
+    io:format("### ChatId ~p~n: ", [ChatId]),
+    case maps:get(ChatId, Chats, newchat) of
+    	{Pid, _} ->
+    	    bot:update(Pid, JSON);
+	newchat ->
+    	    init_bot(ChatId)
+    end;
+process_json(#{<<"inline_query">> := InlineQuery}, _State) ->
+    io:format("Inline Query: ~p~n", [InlineQuery]),
+    Query = maps:get(<<"query">>, InlineQuery),
+    QueryId = maps:get(<<"id">>, InlineQuery),
+    From = maps:get(<<"from">>, InlineQuery),
+    Id = maps:get(<<"id">>, From),
+    FirstName = maps:get(<<"first_name">>, From),
+    gen_server:cast(?MODULE, {inline_query, Id, FirstName, QueryId, Query});
+process_json(Other, _State) ->
+    io:format("Unknown message: ~p~n", [Other]).

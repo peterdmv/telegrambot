@@ -18,7 +18,9 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, update/2]).
+-export([callback_query/2,
+	 start_link/1,
+	 update/2]).
 
 %% Gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -34,6 +36,9 @@ start_link(ChatId) ->
     Server = {local, BotName},
     Opts = [],
     gen_server:start_link(Server, ?MODULE, ChatId, Opts).
+
+callback_query(Pid, Data) ->
+    gen_server:cast(Pid, {callback_query, Data}).
 
 
 update(Pid, Message) ->
@@ -58,14 +63,35 @@ handle_cast({update, Message}, State = #state{chatid=ChatId}) ->
 	    http_gateway:reply(integer_to_list(ChatId),
 			       binary_to_list(cbsg:sentences(5)))
     end,
+    case binary:match(Text, <<"factory">>) of
+	nomatch ->
+	    noop;
+	{_, _} ->
+	    http_gateway:reply(integer_to_list(ChatId),
+			       bot_lunch_parser:fetch(factory), keyboard)
+    end,
     case binary:match(Text, <<"isas">>) of
 	nomatch ->
 	    noop;
 	{_, _} ->
 	    http_gateway:reply(integer_to_list(ChatId),
-			       bot_lunch:fetch(isas))
+			       bot_lunch_parser:fetch(isas))
     end,
-
+    case binary:match(Text, <<"hk">>) of
+	nomatch ->
+	    noop;
+	{_, _} ->
+	    http_gateway:reply(integer_to_list(ChatId),
+			       bot_lunch_parser:fetch(hk))
+    end,
+    {noreply, State};
+handle_cast({callback_query, <<"isas">>}, State = #state{chatid=ChatId}) ->
+    http_gateway:reply(integer_to_list(ChatId),
+		       bot_lunch_parser:fetch(isas)),
+    {noreply, State};
+handle_cast({callback_query, <<"hk">>}, State = #state{chatid=ChatId}) ->
+    http_gateway:reply(integer_to_list(ChatId),
+		       bot_lunch_parser:fetch(hk)),
     {noreply, State};
 handle_cast(_, State) ->
     {noreply, State}.
