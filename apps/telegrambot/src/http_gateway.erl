@@ -73,6 +73,12 @@ handle_call({start_bot, ChatId}, _,  S = #state{chats=Chats0}) ->
     Ref = erlang:monitor(process, Pid),
     Chats = maps:put(ChatId, {Pid, Ref}, Chats0),
     {reply, {ok, Pid}, S#state{chats=Chats}};
+handle_call({start_bot, ChatId, Msg}, _,  S = #state{chats=Chats0}) ->
+    {ok, Pid} = bot_sup:start_child(ChatId),
+    Ref = erlang:monitor(process, Pid),
+    Chats = maps:put(ChatId, {Pid, Ref}, Chats0),
+    bot:update(Pid, Msg),
+    {reply, {ok, Pid}, S#state{chats=Chats}};
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
@@ -126,6 +132,8 @@ code_change(_OldVsn, State, _Extra) ->
 init_bot(ChatId) ->
     gen_server:cast(?MODULE, {start_bot, ChatId}).
 
+init_bot(ChatId, Msg) ->
+    gen_server:cast(?MODULE, {start_bot, ChatId, Msg}).
 
 bot_sup() ->
     #{id => bot_sup,
@@ -268,7 +276,7 @@ process_json(#{<<"message">> := Msg} = JSON, #state{chats=Chats}) ->
     	{Pid, _} ->
     	    bot:update(Pid, JSON);
 	newchat ->
-    	    init_bot(ChatId)
+    	    init_bot(ChatId, JSON)
     end;
 process_json(#{<<"inline_query">> := InlineQuery}, _State) ->
     io:format("Inline Query: ~p~n", [InlineQuery]),
