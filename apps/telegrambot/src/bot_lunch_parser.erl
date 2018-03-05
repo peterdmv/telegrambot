@@ -8,7 +8,7 @@ fetch(factory) ->
     "Seriously? May I recommend another restaurant?";
 
 fetch(isas) ->
-    {ok, {_,_, Body}} = httpc:request(get, {"http://www.rosiescatering.se/isas-meny-31684489", []}, [], [{body_format, string}]),
+    {ok, {_,_, Body}} = http_gateway:get("http://www.rosiescatering.se/isas-meny-31684489"),
     Tokens = mochiweb_html:parse(Body),
 
     %% TokenList = [{Tag, Attribs, Value}
@@ -20,7 +20,7 @@ fetch(isas) ->
 
 
 fetch(hk) ->
-    {ok, {_,_, Body}} = httpc:request(get, {"http://hk.kvartersmenyn.se/", []}, [], [{body_format, string}]),
+    {ok, {_,_, Body}} = http_gateway:get("http://hk.kvartersmenyn.se/"),
     Tokens = mochiweb_html:parse(Body),
 
     %% TokenList = [{Tag, Attribs, Value}
@@ -32,7 +32,7 @@ fetch(hk) ->
 
 
 fetch(ericofood) ->
-    {ok, {_,_, Body}} = httpc:request(get, {"http://foodbycoor.se/restauranger/ericsson/ericofood/lunch/", []}, [], [{body_format, string}]),
+    {ok, {_,_, Body}} = http_gateway:get("http://foodbycoor.se/restauranger/ericsson/ericofood/lunch/"),
     Tokens = mochiweb_html:parse(Body),
 
     %% TokenList = [{Tag, Attribs, Value}

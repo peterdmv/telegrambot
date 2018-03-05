@@ -18,7 +18,8 @@
 -behaviour(gen_server).
 
 %% API
--export([reply/2, reply/3,
+-export([get/1,
+	 reply/2, reply/3,
 	 start_link/1,
 	 start_bot/1,
 	 webhook_update/1]).
@@ -31,6 +32,7 @@
 		token,
 	        certfile,
 		keyfile,
+		cache=#{},
 		chats=#{}}).
 
 %%%=========================================================================
@@ -39,10 +41,11 @@
 start_link(Sup) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Sup, []).
 
-
 start_bot(ChatId) ->
     gen_server:call(?MODULE, {start_bot, ChatId}, infinity).
 
+get(Uri) ->
+    gen_server:call(?MODULE, {get, Uri}, infinity).
 
 reply(ChatId, Text) ->
     gen_server:cast(?MODULE, {reply, ChatId, Text}).
@@ -68,6 +71,16 @@ init(Sup) ->
     self() ! {start_bot_sup, Sup},
     {ok, #state{token=Token, certfile=CertFile, keyfile=KeyFile}}.
 
+
+handle_call({get, Uri}, _,  S = #state{cache=Cache0}) ->
+    case read_cache(Uri, Cache0) of
+	{none, Cache1} ->
+	    Answer = httpc:request(get, {Uri, []}, [], [{body_format, string}]),
+	    Cache2 = write_cache(Uri, Answer, Cache1),
+	    {reply, Answer, S#state{cache=Cache2}};
+	{Answer, _} ->
+	    {reply, Answer, S}
+    end;
 handle_call({start_bot, ChatId}, _,  S = #state{chats=Chats0}) ->
     {ok, Pid} = bot_sup:start_child(ChatId),
     Ref = erlang:monitor(process, Pid),
@@ -288,3 +301,18 @@ process_json(#{<<"inline_query">> := InlineQuery}, _State) ->
     gen_server:cast(?MODULE, {inline_query, Id, FirstName, QueryId, Query});
 process_json(Other, _State) ->
     io:format("Unknown message: ~p~n", [Other]).
+
+
+read_cache(Uri, Cache) ->
+    Now = os:system_time(second),
+    case maps:get(Uri, Cache, none) of
+	{Answer, Timestamp} when (Now - Timestamp) < 1800 ->
+	    {Answer, Cache};
+	{_, _} ->
+	    {none, maps:remove(Uri, Cache)};
+	none ->
+	    {none, Cache}
+    end.
+
+write_cache(Uri, Answer, Cache) ->
+    Cache#{Uri => {Answer, os:system_time(second)}}.
