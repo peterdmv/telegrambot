@@ -18,7 +18,8 @@
 -behaviour(gen_server).
 
 %% API
--export([get/1,
+-export([answer_query/2,
+	 get/1,
 	 reply/2, reply/3,
 	 start_link/1,
 	 start_bot/1,
@@ -43,6 +44,9 @@ start_link(Sup) ->
 
 start_bot(ChatId) ->
     gen_server:call(?MODULE, {start_bot, ChatId}, infinity).
+
+answer_query(QueryId, Answer) ->
+    gen_server:cast(?MODULE, {answer_inline_query, QueryId, Answer}).
 
 get(Uri) ->
     gen_server:call(?MODULE, {get, Uri}, infinity).
@@ -102,6 +106,9 @@ handle_cast({start_bot, ChatId}, S = #state{chats=Chats0}) ->
     Chats = maps:put(ChatId, {Pid, Ref}, Chats0),
     {noreply, S#state{chats=Chats}};
 %---------------------------------------------------------------------------
+handle_cast({answer_inline_query, QueryId, Answer}, State = #state{token=Token}) ->
+    do_answer_inline_query(Token, QueryId, Answer),
+    {noreply, State};
 handle_cast({reply, ChatId, Text}, State = #state{token=Token}) ->
     do_reply(Token, ChatId, Text),
     {noreply, State};
@@ -111,23 +118,22 @@ handle_cast({reply_with_keyboard, ChatId, Text}, State = #state{token=Token}) ->
 handle_cast({webhook_update, _Env, In}, State) ->
     process_message(In, State),
     {noreply, State};
-handle_cast({inline_query, Id, FirstName, QueryId, Query},
-	    State = #state{token=Token}) ->
-    do_answer_inline_query(Token, Id, FirstName, QueryId, Query),
-    {noreply, State};
 handle_cast(_, State) ->
     {noreply, State}.
 
 handle_info({start_bot_sup, Sup}, S = #state{}) ->
-    {ok, Pid} = supervisor:start_child(Sup, bot_sup()),
-    link(Pid),
+    {ok, Pid0} = supervisor:start_child(Sup, bot_sup()),
+    link(Pid0),
+    {ok, Pid1} = supervisor:start_child(Sup, query_handler()),
+    link(Pid1),
+
     % Start pre-configured bots
     Res = application:get_env(chats),
     io:format("RESs: ~p~n", [Res]),
     {ok, Chats} = Res,
     io:format("Chats: ~p~n", [Chats]),
     [init_bot(ChatId) || ChatId <- Chats],
-    {noreply, S#state{sup=Pid}};
+    {noreply, S#state{sup=Pid0}};
 handle_info(_, State) ->
     {noreply, State}.
 
@@ -155,6 +161,14 @@ bot_sup() ->
       shutdown => infinity,
       type => supervisor,
       modules => [bot_sup]}.
+
+query_handler() ->
+    #{id => query_handler,
+      start => {query_handler, start_link, []},
+      restart => permanent,
+      shutdown => infinity,
+      type => worker,
+      modules => [query_handler]}.
 
 start_httpd(CertFile, KeyFile) ->
     inets:start(),
@@ -208,64 +222,14 @@ do_reply(Token, ChatId, Text) ->
     io:format("Query: ~p~n", [Query]),
     io:format("Res: ~p~n", [Res]).
 
-
-do_answer_inline_query(Token, _Id, _FirstName, QueryId, Query) ->
-    Answer = prepare_answer(Query),
+do_answer_inline_query(Token, QueryId, Answer) ->
     Results = jsx:encode(Answer),
     URIQuery = uri_string:compose_query([{"inline_query_id", QueryId},
 				      {"results", Results}]),
     Res = httpc:request("https://api.telegram.org/bot" ++ Token ++
 		      "/answerInlineQuery?" ++ URIQuery),
     io:format("JSON answer: ~p~n", [Results]),
-    io:format("Query: ~p~n", [Query]),
     io:format("Res: ~p~n", [Res]).
-
-prepare_answer(<<"info">>) ->
-    [
-     [{<<"type">>,<<"article">>},
-      {<<"id">>, <<"item1">>},
-      {<<"title">>, <<"Wingsuit Flying">>},
-      {<<"thumb_url">>, <<"https://upload.wikimedia.org/wikipedia/commons/e/e8/Wingsuit_Flying_in_Massachusetts_%286367634713%29.jpg">>},
-      {<<"thumb_width">>, 50},
-      {<<"thumb_height">>, 50},
-      {<<"description">>, <<"Sunday 13:00 @ Ranhammarsvagen 14">>},
-      {<<"input_message_content">>,
-       [{<<"message_text">>,<<"*Wingsuit Flying:* Sunday 13:00 @ Ranhammarsvagen 14">>},
-	{<<"parse_mode">>,<<"Markdown">>}]}
-     ]
-    ];
-prepare_answer(<<"lunch">>) ->
-    %% Keyboard = [[ [{<<"text">>, <<"HK">>}, {<<"callback_data">>, <<"hk">>}],
-    %% 		  [{<<"text">>, <<"Isas Spis">>}, {<<"callback_data">>, <<"isas">>}] ]],
-    %% InlineKeyboardMarkup = [{<<"inline_keyboard">>, Keyboard}],
-    MenuHK = unicode:characters_to_binary(bot_lunch_parser:fetch(hk)),
-    MenuIsas = unicode:characters_to_binary(bot_lunch_parser:fetch(isas)),
-    [
-     [{<<"type">>,<<"article">>},
-      {<<"id">>, <<"item1">>},
-      {<<"title">>, <<"HK Restaurant">>},
-      {<<"thumb_url">>, <<"https://cdn1.iconfinder.com/data/icons/social-messaging-ui-color-shapes/128/eat-circle-orange-512.png">>},
-      {<<"thumb_width">>, 50},
-      {<<"thumb_height">>, 50},
-      {<<"description">>, <<"Lunch menu">>},
-      {<<"input_message_content">>,
-       [{<<"message_text">>, MenuHK},
-	{<<"parse_mode">>,<<"Markdown">>}]}
-     ],
-     [{<<"type">>,<<"article">>},
-      {<<"id">>, <<"item2">>},
-      {<<"title">>, <<"Isas Spis">>},
-      {<<"thumb_url">>, <<"https://cdn1.iconfinder.com/data/icons/social-messaging-ui-color-shapes/128/eat-circle-orange-512.png">>},
-      {<<"thumb_width">>, 50},
-      {<<"thumb_height">>, 50},
-      {<<"description">>, <<"Lunch menu">>},
-      {<<"input_message_content">>,
-       [{<<"message_text">>, MenuIsas},
-	{<<"parse_mode">>,<<"Markdown">>}]}
-     ]
-    ];
-prepare_answer(_) ->
-    [].
 
 process_message(In, State)  ->
      Json = jsx:decode(list_to_binary(In), [return_maps]),
@@ -291,14 +255,9 @@ process_json(#{<<"message">> := Msg} = JSON, #state{chats=Chats}) ->
 	newchat ->
     	    init_bot(ChatId, JSON)
     end;
-process_json(#{<<"inline_query">> := InlineQuery}, _State) ->
+process_json(#{<<"inline_query">> := InlineQuery}, _) ->
     io:format("Inline Query: ~p~n", [InlineQuery]),
-    Query = maps:get(<<"query">>, InlineQuery),
-    QueryId = maps:get(<<"id">>, InlineQuery),
-    From = maps:get(<<"from">>, InlineQuery),
-    Id = maps:get(<<"id">>, From),
-    FirstName = maps:get(<<"first_name">>, From),
-    gen_server:cast(?MODULE, {inline_query, Id, FirstName, QueryId, Query});
+    query_handler:inline_query(InlineQuery);
 process_json(Other, _State) ->
     io:format("Unknown message: ~p~n", [Other]).
 
