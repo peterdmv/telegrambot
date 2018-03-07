@@ -90,12 +90,6 @@ handle_call({start_bot, ChatId}, _,  S = #state{chats=Chats0}) ->
     Ref = erlang:monitor(process, Pid),
     Chats = maps:put(ChatId, {Pid, Ref}, Chats0),
     {reply, {ok, Pid}, S#state{chats=Chats}};
-handle_call({start_bot, ChatId, Msg}, _,  S = #state{chats=Chats0}) ->
-    {ok, Pid} = bot_sup:start_child(ChatId),
-    Ref = erlang:monitor(process, Pid),
-    Chats = maps:put(ChatId, {Pid, Ref}, Chats0),
-    bot:update(Pid, Msg),
-    {reply, {ok, Pid}, S#state{chats=Chats}};
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
@@ -104,6 +98,12 @@ handle_cast({start_bot, ChatId}, S = #state{chats=Chats0}) ->
     {ok, Pid} = bot_sup:start_child(ChatId),
     Ref = erlang:monitor(process, Pid),
     Chats = maps:put(ChatId, {Pid, Ref}, Chats0),
+    {noreply, S#state{chats=Chats}};
+handle_cast({start_bot, ChatId, Msg}, S = #state{chats=Chats0}) ->
+    {ok, Pid} = bot_sup:start_child(ChatId),
+    Ref = erlang:monitor(process, Pid),
+    Chats = maps:put(ChatId, {Pid, Ref}, Chats0),
+    bot:update(Pid, Msg),
     {noreply, S#state{chats=Chats}};
 %---------------------------------------------------------------------------
 handle_cast({answer_inline_query, QueryId, Answer}, State = #state{token=Token}) ->

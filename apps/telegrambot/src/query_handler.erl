@@ -74,7 +74,6 @@ handle_query(InlineQuery) ->
     Answer = prepare_answer(Query),
     http_gateway:answer_query(QueryId, Answer).
 
-
 prepare_answer(<<"bullshit">>) ->
     BS = cbsg:sentences(5),
     Short = binary:part(BS, {0, 30}),
