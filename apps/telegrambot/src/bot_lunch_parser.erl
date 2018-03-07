@@ -107,7 +107,7 @@ frev([], Acc) ->
 frev([H|T], Acc) ->
     case is_valid_food(H) of
 	true ->
-	    frev(T, [H ++ " *** "|Acc]);
+	    frev(T, [ " ## " ++ H|Acc]);
 	false ->
 	    frev(T, Acc)
     end.
